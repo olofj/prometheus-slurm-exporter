@@ -24,8 +24,9 @@ import (
 	"strings"
 )
 
-func PartitionsData() []byte {
-	cmd := exec.Command("sinfo", "-h", "-o%R,%C")
+func PartitionsData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-h", "-o%R,%C")
+	cmd := exec.Command("sinfo", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -40,8 +41,9 @@ func PartitionsData() []byte {
 	return out
 }
 
-func PartitionsPendingJobsData() []byte {
-	cmd := exec.Command("squeue", "-a", "-r", "-h", "-o%P", "--states=PENDING")
+func PartitionsPendingJobsData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-a", "-r", "-h", "-o%P", "--states=PENDING")
+	cmd := exec.Command("squeue", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -64,9 +66,9 @@ type PartitionMetrics struct {
 	total     float64
 }
 
-func ParsePartitionsMetrics() map[string]*PartitionMetrics {
+func ParsePartitionsMetrics(cluster ClusterInfo) map[string]*PartitionMetrics {
 	partitions := make(map[string]*PartitionMetrics)
-	lines := strings.Split(string(PartitionsData()), "\n")
+	lines := strings.Split(string(PartitionsData(cluster)), "\n")
 	for _, line := range lines {
 		if strings.Contains(line, ",") {
 			// name of a partition
@@ -87,7 +89,7 @@ func ParsePartitionsMetrics() map[string]*PartitionMetrics {
 		}
 	}
 	// get list of pending jobs by partition name
-	list := strings.Split(string(PartitionsPendingJobsData()), "\n")
+	list := strings.Split(string(PartitionsPendingJobsData(cluster)), "\n")
 	for _, partition := range list {
 		// accumulate the number of pending jobs
 		_, key := partitions[partition]
@@ -108,7 +110,7 @@ type PartitionsCollector struct {
 }
 
 func NewPartitionsCollector() *PartitionsCollector {
-	labels := []string{"partition"}
+	labels := []string{"partition", "cluster"}
 	return &PartitionsCollector{
 		allocated: prometheus.NewDesc("slurm_partition_cpus_allocated", "Allocated CPUs for partition", labels, nil),
 		idle:      prometheus.NewDesc("slurm_partition_cpus_idle", "Idle CPUs for partition", labels, nil),
@@ -127,22 +129,24 @@ func (pc *PartitionsCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (pc *PartitionsCollector) Collect(ch chan<- prometheus.Metric) {
-	pm := ParsePartitionsMetrics()
-	for p := range pm {
-		if pm[p].allocated > 0 {
-			ch <- prometheus.MustNewConstMetric(pc.allocated, prometheus.GaugeValue, pm[p].allocated, p)
-		}
-		if pm[p].idle > 0 {
-			ch <- prometheus.MustNewConstMetric(pc.idle, prometheus.GaugeValue, pm[p].idle, p)
-		}
-		if pm[p].other > 0 {
-			ch <- prometheus.MustNewConstMetric(pc.other, prometheus.GaugeValue, pm[p].other, p)
-		}
-		if pm[p].pending > 0 {
-			ch <- prometheus.MustNewConstMetric(pc.pending, prometheus.GaugeValue, pm[p].pending, p)
-		}
-		if pm[p].total > 0 {
-			ch <- prometheus.MustNewConstMetric(pc.total, prometheus.GaugeValue, pm[p].total, p)
+	for _, c := range clusters {
+		pm := ParsePartitionsMetrics(c)
+		for p := range pm {
+			if pm[p].allocated > 0 {
+				ch <- prometheus.MustNewConstMetric(pc.allocated, prometheus.GaugeValue, pm[p].allocated, p, c.name)
+			}
+			if pm[p].idle > 0 {
+				ch <- prometheus.MustNewConstMetric(pc.idle, prometheus.GaugeValue, pm[p].idle, p, c.name)
+			}
+			if pm[p].other > 0 {
+				ch <- prometheus.MustNewConstMetric(pc.other, prometheus.GaugeValue, pm[p].other, p, c.name)
+			}
+			if pm[p].pending > 0 {
+				ch <- prometheus.MustNewConstMetric(pc.pending, prometheus.GaugeValue, pm[p].pending, p, c.name)
+			}
+			if pm[p].total > 0 {
+				ch <- prometheus.MustNewConstMetric(pc.total, prometheus.GaugeValue, pm[p].total, p, c.name)
+			}
 		}
 	}
 }

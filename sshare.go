@@ -24,8 +24,9 @@ import (
 	"strings"
 )
 
-func FairShareData() []byte {
-	cmd := exec.Command("sshare", "-n", "-P", "-o", "account,fairshare")
+func FairShareData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-n", "-P", "-o", "account,fairshare")
+	cmd := exec.Command("sshare", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -44,9 +45,9 @@ type FairShareMetrics struct {
 	fairshare float64
 }
 
-func ParseFairShareMetrics() map[string]*FairShareMetrics {
+func ParseFairShareMetrics(cluster ClusterInfo) map[string]*FairShareMetrics {
 	accounts := make(map[string]*FairShareMetrics)
-	lines := strings.Split(string(FairShareData()), "\n")
+	lines := strings.Split(string(FairShareData(cluster)), "\n")
 	for _, line := range lines {
 		if !strings.HasPrefix(line, "  ") {
 			if strings.Contains(line, "|") {
@@ -68,7 +69,7 @@ type FairShareCollector struct {
 }
 
 func NewFairShareCollector() *FairShareCollector {
-	labels := []string{"account"}
+	labels := []string{"account", "cluster"}
 	return &FairShareCollector{
 		fairshare: prometheus.NewDesc("slurm_account_fairshare", "FairShare for account", labels, nil),
 	}
@@ -79,8 +80,10 @@ func (fsc *FairShareCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (fsc *FairShareCollector) Collect(ch chan<- prometheus.Metric) {
-	fsm := ParseFairShareMetrics()
-	for f := range fsm {
-		ch <- prometheus.MustNewConstMetric(fsc.fairshare, prometheus.GaugeValue, fsm[f].fairshare, f)
+	for _, c := range clusters {
+		fsm := ParseFairShareMetrics(c)
+		for f := range fsm {
+			ch <- prometheus.MustNewConstMetric(fsc.fairshare, prometheus.GaugeValue, fsm[f].fairshare, f, c.name)
+		}
 	}
 }

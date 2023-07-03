@@ -39,8 +39,8 @@ type QueueMetrics struct {
 }
 
 // Returns the scheduler metrics
-func QueueGetMetrics() *QueueMetrics {
-	return ParseQueueMetrics(QueueData())
+func QueueGetMetrics(cluster ClusterInfo) *QueueMetrics {
+	return ParseQueueMetrics(QueueData(cluster))
 }
 
 func ParseQueueMetrics(input []byte) *QueueMetrics {
@@ -83,8 +83,9 @@ func ParseQueueMetrics(input []byte) *QueueMetrics {
 }
 
 // Execute the squeue command and return its output
-func QueueData() []byte {
-	cmd := exec.Command("squeue", "-a", "-r", "-h", "-o %A,%T,%r", "--states=all")
+func QueueData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-a", "-r", "-h", "-o %A,%T,%r", "--states=all")
+	cmd := exec.Command("squeue", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -106,19 +107,20 @@ func QueueData() []byte {
  */
 
 func NewQueueCollector() *QueueCollector {
+	labels := []string{"cluster"}
 	return &QueueCollector{
-		pending:     prometheus.NewDesc("slurm_queue_pending", "Pending jobs in queue", nil, nil),
-		pending_dep: prometheus.NewDesc("slurm_queue_pending_dependency", "Pending jobs because of dependency in queue", nil, nil),
-		running:     prometheus.NewDesc("slurm_queue_running", "Running jobs in the cluster", nil, nil),
-		suspended:   prometheus.NewDesc("slurm_queue_suspended", "Suspended jobs in the cluster", nil, nil),
-		cancelled:   prometheus.NewDesc("slurm_queue_cancelled", "Cancelled jobs in the cluster", nil, nil),
-		completing:  prometheus.NewDesc("slurm_queue_completing", "Completing jobs in the cluster", nil, nil),
-		completed:   prometheus.NewDesc("slurm_queue_completed", "Completed jobs in the cluster", nil, nil),
-		configuring: prometheus.NewDesc("slurm_queue_configuring", "Configuring jobs in the cluster", nil, nil),
-		failed:      prometheus.NewDesc("slurm_queue_failed", "Number of failed jobs", nil, nil),
-		timeout:     prometheus.NewDesc("slurm_queue_timeout", "Jobs stopped by timeout", nil, nil),
-		preempted:   prometheus.NewDesc("slurm_queue_preempted", "Number of preempted jobs", nil, nil),
-		node_fail:   prometheus.NewDesc("slurm_queue_node_fail", "Number of jobs stopped due to node fail", nil, nil),
+		pending:     prometheus.NewDesc("slurm_queue_pending", "Pending jobs in queue", labels, nil),
+		pending_dep: prometheus.NewDesc("slurm_queue_pending_dependency", "Pending jobs because of dependency in queue", labels, nil),
+		running:     prometheus.NewDesc("slurm_queue_running", "Running jobs in the cluster", labels, nil),
+		suspended:   prometheus.NewDesc("slurm_queue_suspended", "Suspended jobs in the cluster", labels, nil),
+		cancelled:   prometheus.NewDesc("slurm_queue_cancelled", "Cancelled jobs in the cluster", labels, nil),
+		completing:  prometheus.NewDesc("slurm_queue_completing", "Completing jobs in the cluster", labels, nil),
+		completed:   prometheus.NewDesc("slurm_queue_completed", "Completed jobs in the cluster", labels, nil),
+		configuring: prometheus.NewDesc("slurm_queue_configuring", "Configuring jobs in the cluster", labels, nil),
+		failed:      prometheus.NewDesc("slurm_queue_failed", "Number of failed jobs", labels, nil),
+		timeout:     prometheus.NewDesc("slurm_queue_timeout", "Jobs stopped by timeout", labels, nil),
+		preempted:   prometheus.NewDesc("slurm_queue_preempted", "Number of preempted jobs", labels, nil),
+		node_fail:   prometheus.NewDesc("slurm_queue_node_fail", "Number of jobs stopped due to node fail", labels, nil),
 	}
 }
 
@@ -153,17 +155,19 @@ func (qc *QueueCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (qc *QueueCollector) Collect(ch chan<- prometheus.Metric) {
-	qm := QueueGetMetrics()
-	ch <- prometheus.MustNewConstMetric(qc.pending, prometheus.GaugeValue, qm.pending)
-	ch <- prometheus.MustNewConstMetric(qc.pending_dep, prometheus.GaugeValue, qm.pending_dep)
-	ch <- prometheus.MustNewConstMetric(qc.running, prometheus.GaugeValue, qm.running)
-	ch <- prometheus.MustNewConstMetric(qc.suspended, prometheus.GaugeValue, qm.suspended)
-	ch <- prometheus.MustNewConstMetric(qc.cancelled, prometheus.GaugeValue, qm.cancelled)
-	ch <- prometheus.MustNewConstMetric(qc.completing, prometheus.GaugeValue, qm.completing)
-	ch <- prometheus.MustNewConstMetric(qc.completed, prometheus.GaugeValue, qm.completed)
-	ch <- prometheus.MustNewConstMetric(qc.configuring, prometheus.GaugeValue, qm.configuring)
-	ch <- prometheus.MustNewConstMetric(qc.failed, prometheus.GaugeValue, qm.failed)
-	ch <- prometheus.MustNewConstMetric(qc.timeout, prometheus.GaugeValue, qm.timeout)
-	ch <- prometheus.MustNewConstMetric(qc.preempted, prometheus.GaugeValue, qm.preempted)
-	ch <- prometheus.MustNewConstMetric(qc.node_fail, prometheus.GaugeValue, qm.node_fail)
+	for _, c := range clusters {
+		qm := QueueGetMetrics(c)
+		ch <- prometheus.MustNewConstMetric(qc.pending, prometheus.GaugeValue, qm.pending, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.pending_dep, prometheus.GaugeValue, qm.pending_dep, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.running, prometheus.GaugeValue, qm.running, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.suspended, prometheus.GaugeValue, qm.suspended, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.cancelled, prometheus.GaugeValue, qm.cancelled, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.completing, prometheus.GaugeValue, qm.completing, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.completed, prometheus.GaugeValue, qm.completed, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.configuring, prometheus.GaugeValue, qm.configuring, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.failed, prometheus.GaugeValue, qm.failed, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.timeout, prometheus.GaugeValue, qm.timeout, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.preempted, prometheus.GaugeValue, qm.preempted, c.name)
+		ch <- prometheus.MustNewConstMetric(qc.node_fail, prometheus.GaugeValue, qm.node_fail, c.name)
+	}
 }

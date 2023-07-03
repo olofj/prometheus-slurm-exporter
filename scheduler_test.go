@@ -32,5 +32,5 @@ func TestSchedulerMetrics(t *testing.T) {
 }
 
 func TestSchedulerGetMetrics(t *testing.T) {
-	t.Logf("%+v", SchedulerGetMetrics())
+	t.Logf("%+v", SchedulerGetMetrics(ClusterInfo{"local", nil}))
 }

@@ -17,11 +17,21 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/prometheus/common/log"
 	"net/http"
+	"os/exec"
+	"strings"
 )
+
+type ClusterInfo struct {
+	name    string
+	cmdargs []string
+}
+
+var allclusters = map[string][]string{"local": nil}
 
 func init() {
 	// Metrics have to be registered to be exposed
@@ -34,6 +44,27 @@ func init() {
 	prometheus.MustRegister(NewSchedulerCollector())  // from scheduler.go
 	prometheus.MustRegister(NewFairShareCollector())  // from sshare.go
 	prometheus.MustRegister(NewUsersCollector())      // from users.go
+
+	// Get the available clusters from 'sacctmgr list cluster'
+	// But there could be clusters in there that aren't valid.
+	// Get through and vet them by using a simple "sshare -M <cluster>"
+	// and drop them if it failed.
+	valid := []string{}
+	args := []string{"list", "cluster", "format=Cluster", "-n", "-P"}
+	output := strings.TrimSpace(string(Execute("sacctmgr", args)))
+	for _, c := range strings.Split(output, "\n") {
+		cmd := exec.Command("sshare", "-M", c)
+		cmd.Start() // We'll catch any error at Wait()
+		if err := cmd.Wait(); err == nil {
+			allclusters[c] = []string{"-M", c}
+			valid = append(valid, c)
+		}
+	}
+	available := strings.Join(valid, ",")
+	flag.String(
+		"clusters",
+		"local",
+		fmt.Sprintf("List of clusters to export. Available: %v", available))
 }
 
 var listenAddress = flag.String(
@@ -46,8 +77,18 @@ var gpuAcct = flag.Bool(
 	false,
 	"Enable GPUs accounting")
 
+var clusters []ClusterInfo
+
 func main() {
 	flag.Parse()
+
+	carg := flag.Lookup("clusters").Value.String()
+	for _, c := range strings.Split(carg, ",") {
+		if _, ok := allclusters[c]; !ok {
+			log.Fatalf("Unknown cluster '%s' specified. See --help for list.", c)
+		}
+		clusters = append(clusters, ClusterInfo{c, allclusters[c]})
+	}
 
 	// Turn on GPUs accounting only if the corresponding command line option is set to true.
 	if *gpuAcct {

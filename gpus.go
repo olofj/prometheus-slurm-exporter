@@ -31,58 +31,63 @@ type GPUsMetrics struct {
 	utilization float64
 }
 
-func GPUsGetMetrics() *GPUsMetrics {
-	return ParseGPUsMetrics()
+func GPUsGetMetrics(cluster ClusterInfo) *GPUsMetrics {
+	return ParseGPUsMetrics(cluster)
 }
 
-func ParseAllocatedGPUs() float64 {
+func ParseAllocatedGPUs(cluster ClusterInfo) (map[string]float64, float64) {
 	var num_gpus = 0.0
+	var gpus_pertype = make(map[string]float64)
 
-	args := []string{"-a", "-X", "--format=Allocgres", "--state=RUNNING", "--noheader", "--parsable2"}
+	args := append(cluster.cmdargs, "-a", "-X", "--format=AllocTRES", "--state=RUNNING", "--noheader", "--parsable2")
 	output := string(Execute("sacct", args))
 	if len(output) > 0 {
 		for _, line := range strings.Split(output, "\n") {
-			if len(line) > 0 {
-				line = strings.Trim(line, "\"")
-				descriptor := strings.TrimPrefix(line, "gpu:")
-				job_gpus, _ := strconv.ParseFloat(descriptor, 64)
+			line = strings.Trim(line, "\"")
+			if strings.HasPrefix(line, "board:") {
+				boardinfo := strings.Split(line, ":")
+				btype := boardinfo[1]
+				job_gpus, _ := strconv.ParseFloat(boardinfo[2], 64)
 				num_gpus += job_gpus
+				gpus_pertype[btype] += job_gpus
 			}
 		}
 	}
 
-	return num_gpus
+	return gpus_pertype, num_gpus
 }
 
-func ParseTotalGPUs() float64 {
+func ParseTotalGPUs(cluster ClusterInfo) (map[string]float64, float64) {
 	var num_gpus = 0.0
+	var gpus_pertype = make(map[string]float64)
 
-	args := []string{"-h", "-o \"%n %G\""}
+	args := append(cluster.cmdargs, "-h", "-o \"%n %G\"")
 	output := string(Execute("sinfo", args))
 	if len(output) > 0 {
 		for _, line := range strings.Split(output, "\n") {
-			if len(line) > 0 {
-				line = strings.Trim(line, "\"")
-				descriptor := strings.Fields(line)[1]
-				descriptor = strings.TrimPrefix(descriptor, "gpu:")
-				descriptor = strings.Split(descriptor, "(")[0]
-				node_gpus, _ := strconv.ParseFloat(descriptor, 64)
+			line = strings.Trim(line, "\"")
+			fields := strings.Fields(line)
+			if len(fields) > 1 && strings.HasPrefix(fields[1], "board:") {
+				boardinfo := strings.Split(fields[1], ":")
+				btype := boardinfo[1]
+				node_gpus, _ := strconv.ParseFloat(boardinfo[2], 64)
 				num_gpus += node_gpus
+				gpus_pertype[btype] += node_gpus
 			}
 		}
 	}
 
-	return num_gpus
+	return gpus_pertype, num_gpus
 }
 
-func ParseGPUsMetrics() *GPUsMetrics {
+func ParseGPUsMetrics(cluster ClusterInfo) *GPUsMetrics {
 	var gm GPUsMetrics
-	total_gpus := ParseTotalGPUs()
-	allocated_gpus := ParseAllocatedGPUs()
-	gm.alloc = allocated_gpus
-	gm.idle = total_gpus - allocated_gpus
+	_, total_gpus := ParseTotalGPUs(cluster)
+	_, total_alloc := ParseAllocatedGPUs(cluster)
+	gm.alloc = total_alloc
+	gm.idle = total_gpus - total_alloc
 	gm.total = total_gpus
-	gm.utilization = allocated_gpus / total_gpus
+	gm.utilization = total_alloc / total_gpus
 	return &gm
 }
 
@@ -110,11 +115,12 @@ func Execute(command string, arguments []string) []byte {
  */
 
 func NewGPUsCollector() *GPUsCollector {
+	labels := []string{"cluster"}
 	return &GPUsCollector{
-		alloc:       prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", nil, nil),
-		idle:        prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", nil, nil),
-		total:       prometheus.NewDesc("slurm_gpus_total", "Total GPUs", nil, nil),
-		utilization: prometheus.NewDesc("slurm_gpus_utilization", "Total GPU utilization", nil, nil),
+		alloc:       prometheus.NewDesc("slurm_gpus_alloc", "Allocated GPUs", labels, nil),
+		idle:        prometheus.NewDesc("slurm_gpus_idle", "Idle GPUs", labels, nil),
+		total:       prometheus.NewDesc("slurm_gpus_total", "Total GPUs", labels, nil),
+		utilization: prometheus.NewDesc("slurm_gpus_utilization", "Total GPU utilization", labels, nil),
 	}
 }
 
@@ -133,9 +139,11 @@ func (cc *GPUsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- cc.utilization
 }
 func (cc *GPUsCollector) Collect(ch chan<- prometheus.Metric) {
-	cm := GPUsGetMetrics()
-	ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc)
-	ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle)
-	ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total)
-	ch <- prometheus.MustNewConstMetric(cc.utilization, prometheus.GaugeValue, cm.utilization)
+	for _, c := range clusters {
+		cm := GPUsGetMetrics(c)
+		ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.utilization, prometheus.GaugeValue, cm.utilization, c.name)
+	}
 }

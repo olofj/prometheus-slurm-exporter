@@ -25,8 +25,9 @@ import (
 	"strings"
 )
 
-func UsersData() []byte {
-	cmd := exec.Command("squeue", "-a", "-r", "-h", "-o %A|%u|%T|%C")
+func UsersData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-a", "-r", "-h", "-o %A|%u|%T|%C")
+	cmd := exec.Command("squeue", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -86,7 +87,7 @@ type UsersCollector struct {
 }
 
 func NewUsersCollector() *UsersCollector {
-	labels := []string{"user"}
+	labels := []string{"user", "cluster"}
 	return &UsersCollector{
 		pending:      prometheus.NewDesc("slurm_user_jobs_pending", "Pending jobs for user", labels, nil),
 		running:      prometheus.NewDesc("slurm_user_jobs_running", "Running jobs for user", labels, nil),
@@ -103,19 +104,21 @@ func (uc *UsersCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (uc *UsersCollector) Collect(ch chan<- prometheus.Metric) {
-	um := ParseUsersMetrics(UsersData())
-	for u := range um {
-		if um[u].pending > 0 {
-			ch <- prometheus.MustNewConstMetric(uc.pending, prometheus.GaugeValue, um[u].pending, u)
-		}
-		if um[u].running > 0 {
-			ch <- prometheus.MustNewConstMetric(uc.running, prometheus.GaugeValue, um[u].running, u)
-		}
-		if um[u].running_cpus > 0 {
-			ch <- prometheus.MustNewConstMetric(uc.running_cpus, prometheus.GaugeValue, um[u].running_cpus, u)
-		}
-		if um[u].suspended > 0 {
-			ch <- prometheus.MustNewConstMetric(uc.suspended, prometheus.GaugeValue, um[u].suspended, u)
+	for _, c := range clusters {
+		um := ParseUsersMetrics(UsersData(c))
+		for u := range um {
+			if um[u].pending > 0 {
+				ch <- prometheus.MustNewConstMetric(uc.pending, prometheus.GaugeValue, um[u].pending, u, c.name)
+			}
+			if um[u].running > 0 {
+				ch <- prometheus.MustNewConstMetric(uc.running, prometheus.GaugeValue, um[u].running, u, c.name)
+			}
+			if um[u].running_cpus > 0 {
+				ch <- prometheus.MustNewConstMetric(uc.running_cpus, prometheus.GaugeValue, um[u].running_cpus, u, c.name)
+			}
+			if um[u].suspended > 0 {
+				ch <- prometheus.MustNewConstMetric(uc.suspended, prometheus.GaugeValue, um[u].suspended, u, c.name)
+			}
 		}
 	}
 }

@@ -32,5 +32,5 @@ func TestCPUsMetrics(t *testing.T) {
 }
 
 func TestCPUssGetMetrics(t *testing.T) {
-	t.Logf("%+v", CPUsGetMetrics())
+	t.Logf("%+v", CPUsGetMetrics(ClusterInfo{"local", nil}))
 }

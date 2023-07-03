@@ -48,8 +48,8 @@ type SchedulerMetrics struct {
 }
 
 // Execute the sdiag command and return its output
-func SchedulerData() []byte {
-	cmd := exec.Command("sdiag")
+func SchedulerData(cluster ClusterInfo) []byte {
+	cmd := exec.Command("sdiag", cluster.cmdargs...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -125,8 +125,8 @@ func ParseSchedulerMetrics(input []byte) *SchedulerMetrics {
 }
 
 // Returns the scheduler metrics
-func SchedulerGetMetrics() *SchedulerMetrics {
-	return ParseSchedulerMetrics(SchedulerData())
+func SchedulerGetMetrics(cluster ClusterInfo) *SchedulerMetrics {
+	return ParseSchedulerMetrics(SchedulerData(cluster))
 }
 
 /*
@@ -169,83 +169,86 @@ func (c *SchedulerCollector) Describe(ch chan<- *prometheus.Desc) {
 
 // Send the values of all metrics
 func (sc *SchedulerCollector) Collect(ch chan<- prometheus.Metric) {
-	sm := SchedulerGetMetrics()
-	ch <- prometheus.MustNewConstMetric(sc.threads, prometheus.GaugeValue, sm.threads)
-	ch <- prometheus.MustNewConstMetric(sc.queue_size, prometheus.GaugeValue, sm.queue_size)
-	ch <- prometheus.MustNewConstMetric(sc.dbd_queue_size, prometheus.GaugeValue, sm.dbd_queue_size)
-	ch <- prometheus.MustNewConstMetric(sc.last_cycle, prometheus.GaugeValue, sm.last_cycle)
-	ch <- prometheus.MustNewConstMetric(sc.mean_cycle, prometheus.GaugeValue, sm.mean_cycle)
-	ch <- prometheus.MustNewConstMetric(sc.cycle_per_minute, prometheus.GaugeValue, sm.cycle_per_minute)
-	ch <- prometheus.MustNewConstMetric(sc.backfill_last_cycle, prometheus.GaugeValue, sm.backfill_last_cycle)
-	ch <- prometheus.MustNewConstMetric(sc.backfill_mean_cycle, prometheus.GaugeValue, sm.backfill_mean_cycle)
-	ch <- prometheus.MustNewConstMetric(sc.backfill_depth_mean, prometheus.GaugeValue, sm.backfill_depth_mean)
-	ch <- prometheus.MustNewConstMetric(sc.total_backfilled_jobs_since_start, prometheus.GaugeValue, sm.total_backfilled_jobs_since_start)
-	ch <- prometheus.MustNewConstMetric(sc.total_backfilled_jobs_since_cycle, prometheus.GaugeValue, sm.total_backfilled_jobs_since_cycle)
-	ch <- prometheus.MustNewConstMetric(sc.total_backfilled_heterogeneous, prometheus.GaugeValue, sm.total_backfilled_heterogeneous)
+	for _, c := range clusters {
+		sm := SchedulerGetMetrics(c)
+		ch <- prometheus.MustNewConstMetric(sc.threads, prometheus.GaugeValue, sm.threads, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.queue_size, prometheus.GaugeValue, sm.queue_size, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.dbd_queue_size, prometheus.GaugeValue, sm.dbd_queue_size, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.last_cycle, prometheus.GaugeValue, sm.last_cycle, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.mean_cycle, prometheus.GaugeValue, sm.mean_cycle, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.cycle_per_minute, prometheus.GaugeValue, sm.cycle_per_minute, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.backfill_last_cycle, prometheus.GaugeValue, sm.backfill_last_cycle, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.backfill_mean_cycle, prometheus.GaugeValue, sm.backfill_mean_cycle, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.backfill_depth_mean, prometheus.GaugeValue, sm.backfill_depth_mean, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.total_backfilled_jobs_since_start, prometheus.GaugeValue, sm.total_backfilled_jobs_since_start, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.total_backfilled_jobs_since_cycle, prometheus.GaugeValue, sm.total_backfilled_jobs_since_cycle, c.name)
+		ch <- prometheus.MustNewConstMetric(sc.total_backfilled_heterogeneous, prometheus.GaugeValue, sm.total_backfilled_heterogeneous, c.name)
+	}
 }
 
 // Returns the Slurm scheduler collector, used to register with the prometheus client
 func NewSchedulerCollector() *SchedulerCollector {
+	labels := []string{"cluster"}
 	return &SchedulerCollector{
 		threads: prometheus.NewDesc(
 			"slurm_scheduler_threads",
 			"Information provided by the Slurm sdiag command, number of scheduler threads ",
-			nil,
+			labels,
 			nil),
 		queue_size: prometheus.NewDesc(
 			"slurm_scheduler_queue_size",
 			"Information provided by the Slurm sdiag command, length of the scheduler queue",
-			nil,
+			labels,
 			nil),
 		dbd_queue_size: prometheus.NewDesc(
 			"slurm_scheduler_dbd_queue_size",
 			"Information provided by the Slurm sdiag command, length of the DBD agent queue",
-			nil,
+			labels,
 			nil),
 		last_cycle: prometheus.NewDesc(
 			"slurm_scheduler_last_cycle",
 			"Information provided by the Slurm sdiag command, scheduler last cycle time in (microseconds)",
-			nil,
+			labels,
 			nil),
 		mean_cycle: prometheus.NewDesc(
 			"slurm_scheduler_mean_cycle",
 			"Information provided by the Slurm sdiag command, scheduler mean cycle time in (microseconds)",
-			nil,
+			labels,
 			nil),
 		cycle_per_minute: prometheus.NewDesc(
 			"slurm_scheduler_cycle_per_minute",
 			"Information provided by the Slurm sdiag command, number scheduler cycles per minute",
-			nil,
+			labels,
 			nil),
 		backfill_last_cycle: prometheus.NewDesc(
 			"slurm_scheduler_backfill_last_cycle",
 			"Information provided by the Slurm sdiag command, scheduler backfill last cycle time in (microseconds)",
-			nil,
+			labels,
 			nil),
 		backfill_mean_cycle: prometheus.NewDesc(
 			"slurm_scheduler_backfill_mean_cycle",
 			"Information provided by the Slurm sdiag command, scheduler backfill mean cycle time in (microseconds)",
-			nil,
+			labels,
 			nil),
 		backfill_depth_mean: prometheus.NewDesc(
 			"slurm_scheduler_backfill_depth_mean",
 			"Information provided by the Slurm sdiag command, scheduler backfill mean depth",
-			nil,
+			labels,
 			nil),
 		total_backfilled_jobs_since_start: prometheus.NewDesc(
 			"slurm_scheduler_backfilled_jobs_since_start_total",
 			"Information provided by the Slurm sdiag command, number of jobs started thanks to backfilling since last slurm start",
-			nil,
+			labels,
 			nil),
 		total_backfilled_jobs_since_cycle: prometheus.NewDesc(
 			"slurm_scheduler_backfilled_jobs_since_cycle_total",
 			"Information provided by the Slurm sdiag command, number of jobs started thanks to backfilling since last time stats where reset",
-			nil,
+			labels,
 			nil),
 		total_backfilled_heterogeneous: prometheus.NewDesc(
 			"slurm_scheduler_backfilled_heterogeneous_total",
 			"Information provided by the Slurm sdiag command, number of heterogeneous job components started thanks to backfilling since last Slurm start",
-			nil,
+			labels,
 			nil),
 	}
 }

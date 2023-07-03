@@ -31,8 +31,8 @@ type CPUsMetrics struct {
 	total float64
 }
 
-func CPUsGetMetrics() *CPUsMetrics {
-	return ParseCPUsMetrics(CPUsData())
+func CPUsGetMetrics(cluster ClusterInfo) *CPUsMetrics {
+	return ParseCPUsMetrics(CPUsData(cluster))
 }
 
 func ParseCPUsMetrics(input []byte) *CPUsMetrics {
@@ -48,8 +48,9 @@ func ParseCPUsMetrics(input []byte) *CPUsMetrics {
 }
 
 // Execute the sinfo command and return its output
-func CPUsData() []byte {
-	cmd := exec.Command("sinfo", "-h", "-o %C")
+func CPUsData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-h", "-o %C")
+	cmd := exec.Command("sinfo", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -71,11 +72,12 @@ func CPUsData() []byte {
  */
 
 func NewCPUsCollector() *CPUsCollector {
+	labels := []string{"cluster"}
 	return &CPUsCollector{
-		alloc: prometheus.NewDesc("slurm_cpus_alloc", "Allocated CPUs", nil, nil),
-		idle:  prometheus.NewDesc("slurm_cpus_idle", "Idle CPUs", nil, nil),
-		other: prometheus.NewDesc("slurm_cpus_other", "Mix CPUs", nil, nil),
-		total: prometheus.NewDesc("slurm_cpus_total", "Total CPUs", nil, nil),
+		alloc: prometheus.NewDesc("slurm_cpus_alloc", "Allocated CPUs", labels, nil),
+		idle:  prometheus.NewDesc("slurm_cpus_idle", "Idle CPUs", labels, nil),
+		other: prometheus.NewDesc("slurm_cpus_other", "Mix CPUs", labels, nil),
+		total: prometheus.NewDesc("slurm_cpus_total", "Total CPUs", labels, nil),
 	}
 }
 
@@ -94,9 +96,11 @@ func (cc *CPUsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- cc.total
 }
 func (cc *CPUsCollector) Collect(ch chan<- prometheus.Metric) {
-	cm := CPUsGetMetrics()
-	ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc)
-	ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle)
-	ch <- prometheus.MustNewConstMetric(cc.other, prometheus.GaugeValue, cm.other)
-	ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total)
+	for _, c := range clusters {
+		cm := CPUsGetMetrics(c)
+		ch <- prometheus.MustNewConstMetric(cc.alloc, prometheus.GaugeValue, cm.alloc, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.idle, prometheus.GaugeValue, cm.idle, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.other, prometheus.GaugeValue, cm.other, c.name)
+		ch <- prometheus.MustNewConstMetric(cc.total, prometheus.GaugeValue, cm.total, c.name)
+	}
 }

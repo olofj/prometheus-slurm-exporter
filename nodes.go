@@ -39,8 +39,8 @@ type NodesMetrics struct {
 	resv  float64
 }
 
-func NodesGetMetrics() *NodesMetrics {
-	return ParseNodesMetrics(NodesData())
+func NodesGetMetrics(cluster ClusterInfo) *NodesMetrics {
+	return ParseNodesMetrics(NodesData(cluster))
 }
 
 func RemoveDuplicates(s []string) []string {
@@ -111,8 +111,9 @@ func ParseNodesMetrics(input []byte) *NodesMetrics {
 }
 
 // Execute the sinfo command and return its output
-func NodesData() []byte {
-	cmd := exec.Command("sinfo", "-h", "-o %D,%T")
+func NodesData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-h", "-o %D,%T")
+	cmd := exec.Command("sinfo", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -134,17 +135,18 @@ func NodesData() []byte {
  */
 
 func NewNodesCollector() *NodesCollector {
+	labels := []string{"cluster"}
 	return &NodesCollector{
-		alloc: prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", nil, nil),
-		comp:  prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", nil, nil),
-		down:  prometheus.NewDesc("slurm_nodes_down", "Down nodes", nil, nil),
-		drain: prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", nil, nil),
-		err:   prometheus.NewDesc("slurm_nodes_err", "Error nodes", nil, nil),
-		fail:  prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", nil, nil),
-		idle:  prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", nil, nil),
-		maint: prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", nil, nil),
-		mix:   prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", nil, nil),
-		resv:  prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", nil, nil),
+		alloc: prometheus.NewDesc("slurm_nodes_alloc", "Allocated nodes", labels, nil),
+		comp:  prometheus.NewDesc("slurm_nodes_comp", "Completing nodes", labels, nil),
+		down:  prometheus.NewDesc("slurm_nodes_down", "Down nodes", labels, nil),
+		drain: prometheus.NewDesc("slurm_nodes_drain", "Drain nodes", labels, nil),
+		err:   prometheus.NewDesc("slurm_nodes_err", "Error nodes", labels, nil),
+		fail:  prometheus.NewDesc("slurm_nodes_fail", "Fail nodes", labels, nil),
+		idle:  prometheus.NewDesc("slurm_nodes_idle", "Idle nodes", labels, nil),
+		maint: prometheus.NewDesc("slurm_nodes_maint", "Maint nodes", labels, nil),
+		mix:   prometheus.NewDesc("slurm_nodes_mix", "Mix nodes", labels, nil),
+		resv:  prometheus.NewDesc("slurm_nodes_resv", "Reserved nodes", labels, nil),
 	}
 }
 
@@ -175,15 +177,17 @@ func (nc *NodesCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- nc.resv
 }
 func (nc *NodesCollector) Collect(ch chan<- prometheus.Metric) {
-	nm := NodesGetMetrics()
-	ch <- prometheus.MustNewConstMetric(nc.alloc, prometheus.GaugeValue, nm.alloc)
-	ch <- prometheus.MustNewConstMetric(nc.comp, prometheus.GaugeValue, nm.comp)
-	ch <- prometheus.MustNewConstMetric(nc.down, prometheus.GaugeValue, nm.down)
-	ch <- prometheus.MustNewConstMetric(nc.drain, prometheus.GaugeValue, nm.drain)
-	ch <- prometheus.MustNewConstMetric(nc.err, prometheus.GaugeValue, nm.err)
-	ch <- prometheus.MustNewConstMetric(nc.fail, prometheus.GaugeValue, nm.fail)
-	ch <- prometheus.MustNewConstMetric(nc.idle, prometheus.GaugeValue, nm.idle)
-	ch <- prometheus.MustNewConstMetric(nc.maint, prometheus.GaugeValue, nm.maint)
-	ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix)
-	ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv)
+	for _, c := range clusters {
+		nm := NodesGetMetrics(c)
+		ch <- prometheus.MustNewConstMetric(nc.alloc, prometheus.GaugeValue, nm.alloc, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.comp, prometheus.GaugeValue, nm.comp, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.down, prometheus.GaugeValue, nm.down, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.drain, prometheus.GaugeValue, nm.drain, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.err, prometheus.GaugeValue, nm.err, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.fail, prometheus.GaugeValue, nm.fail, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.idle, prometheus.GaugeValue, nm.idle, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.maint, prometheus.GaugeValue, nm.maint, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.mix, prometheus.GaugeValue, nm.mix, c.name)
+		ch <- prometheus.MustNewConstMetric(nc.resv, prometheus.GaugeValue, nm.resv, c.name)
+	}
 }

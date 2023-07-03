@@ -32,5 +32,5 @@ func TestNodesMetrics(t *testing.T) {
 }
 
 func TestNodesGetMetrics(t *testing.T) {
-	t.Logf("%+v", NodesGetMetrics())
+	t.Logf("%+v", NodesGetMetrics(ClusterInfo{"local", nil}))
 }

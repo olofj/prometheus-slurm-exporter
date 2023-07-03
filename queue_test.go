@@ -32,5 +32,5 @@ func TestParseQueueMetrics(t *testing.T) {
 }
 
 func TestQueueGetMetrics(t *testing.T) {
-	t.Logf("%+v", QueueGetMetrics())
+	t.Logf("%+v", QueueGetMetrics(ClusterInfo{"local", nil}))
 }

@@ -25,8 +25,9 @@ import (
 	"strings"
 )
 
-func AccountsData() []byte {
-	cmd := exec.Command("squeue", "-a", "-r", "-h", "-o %A|%a|%T|%C")
+func AccountsData(cluster ClusterInfo) []byte {
+	args := append(cluster.cmdargs, "-a", "-r", "-h", "-o %A|%a|%T|%C")
+	cmd := exec.Command("squeue", args...)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Fatal(err)
@@ -86,7 +87,7 @@ type AccountsCollector struct {
 }
 
 func NewAccountsCollector() *AccountsCollector {
-	labels := []string{"account"}
+	labels := []string{"account", "cluster"}
 	return &AccountsCollector{
 		pending:      prometheus.NewDesc("slurm_account_jobs_pending", "Pending jobs for account", labels, nil),
 		running:      prometheus.NewDesc("slurm_account_jobs_running", "Running jobs for account", labels, nil),
@@ -103,19 +104,22 @@ func (ac *AccountsCollector) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (ac *AccountsCollector) Collect(ch chan<- prometheus.Metric) {
-	am := ParseAccountsMetrics(AccountsData())
-	for a := range am {
-		if am[a].pending > 0 {
-			ch <- prometheus.MustNewConstMetric(ac.pending, prometheus.GaugeValue, am[a].pending, a)
-		}
-		if am[a].running > 0 {
-			ch <- prometheus.MustNewConstMetric(ac.running, prometheus.GaugeValue, am[a].running, a)
-		}
-		if am[a].running_cpus > 0 {
-			ch <- prometheus.MustNewConstMetric(ac.running_cpus, prometheus.GaugeValue, am[a].running_cpus, a)
-		}
-		if am[a].suspended > 0 {
-			ch <- prometheus.MustNewConstMetric(ac.suspended, prometheus.GaugeValue, am[a].suspended, a)
+	for _, c := range clusters {
+		data := AccountsData(c)
+		am := ParseAccountsMetrics(data)
+		for a := range am {
+			if am[a].pending > 0 {
+				ch <- prometheus.MustNewConstMetric(ac.pending, prometheus.GaugeValue, am[a].pending, a, c.name)
+			}
+			if am[a].running > 0 {
+				ch <- prometheus.MustNewConstMetric(ac.running, prometheus.GaugeValue, am[a].running, a, c.name)
+			}
+			if am[a].running_cpus > 0 {
+				ch <- prometheus.MustNewConstMetric(ac.running_cpus, prometheus.GaugeValue, am[a].running_cpus, a, c.name)
+			}
+			if am[a].suspended > 0 {
+				ch <- prometheus.MustNewConstMetric(ac.suspended, prometheus.GaugeValue, am[a].suspended, a, c.name)
+			}
 		}
 	}
 }
