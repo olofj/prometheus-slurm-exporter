@@ -38,15 +38,15 @@ $ ps aux | grep prometheus | head -1
 root     2271391  0.0  0.0 1453596 14012 ?       SLsl 18:32   0:00 /snap/prometheus-slurm-exporter/x1/bin/prometheus-slurm-exporter
 ```
 
-Use `netstat` to verify that the installed `prometheus-slurm-exporter` snap process is listening on port 8080.
+Use `netstat` to verify that the installed `prometheus-slurm-exporter` snap process is listening on port 9341.
 ```bash
 $ sudo netstat -peanut | grep prometheus
-tcp6       0      0 :::8080                 :::*                    LISTEN      0          15042010   2271391/prometheus-slurm-exporter
+tcp6       0      0 :::9341                 :::*                    LISTEN      0          15042010   2271391/prometheus-slurm-exporter
 ```
 
 Lastly, curl the metrics endpoint.
 ```bash
-$ curl 127.0.0.1:8080/metrics
+$ curl 127.0.0.1:9341/metrics
 # TYPE slurm_cpus_total gauge
 slurm_cpus_total 8
 # HELP slurm_nodes_alloc Allocated nodes
